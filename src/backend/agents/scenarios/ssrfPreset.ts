@@ -1,88 +1,66 @@
-import { PresetScenario } from "./types";
+import type { DemoScenario } from "./types";
 
-export const ssrfScenario: PresetScenario = {
-  snippet: {
-    id: "ssrf-webhook",
-    name: "Webhook Client (SSRF)",
-    language: "typescript",
-    vulnerabilityType: "CWE-918: Server-Side Request Forgery",
-    description: "Blind HTTP fetch to user-controlled destination URL.",
-    code: `export async function dispatchWebhook(req: Request) {
-  const { targetUrl, eventPayload } = await req.json();
-
-  // VULNERABLE: Arbitrary URL fetch allows attacking internal metadata / LAN
-  const response = await fetch(targetUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(eventPayload),
-  });
-
-  return { dispatched: true, status: response.status };
-}`,
+export const ssrfScenario: DemoScenario = {
+  presetId: "ssrf-webhook",
+  red: {
+    summary: "The handler sends a server-side request to any caller-supplied URL.",
+    findings: [
+      {
+        id: "F-1",
+        title: "Server-side request forgery via webhook URL",
+        cwe: "CWE-918",
+        severity: "HIGH",
+        confidence: "HIGH",
+        explanation:
+          "targetUrl comes from the request body and is fetched without validation, so callers can reach internal services or cloud metadata endpoints from the server's network position.",
+        locations: [{ startLine: 2, endLine: 9 }],
+        evidence: ["const response = await fetch(targetUrl, {"],
+        demonstrationInput: "targetUrl: http://169.254.169.254/latest/meta-data/",
+        assumptions: ["The server runs where internal or metadata endpoints are reachable."],
+      },
+    ],
+    missingContext: ["Whether an egress proxy or allow-list exists outside this handler."],
   },
-  vulnerability: {
-    id: "vuln-ssrf-02",
-    title: "Server-Side Request Forgery to Internal Cloud Metadata",
-    cve: "CVE-2024-9182",
-    cwe: "CWE-918",
-    severity: "HIGH",
-    description: "HTTP client executes unvalidated requests to user-supplied URLs, enabling access to internal AWS/GCP metadata endpoints (169.254.169.254).",
-    vulnerableLineNumbers: [5],
-    vector: "POST /api/webhooks/dispatch",
-    sampleExploitPayload: "http://169.254.169.254/computeMetadata/v1/",
-    remediationSummary: "Validate protocol, resolve DNS, and block private/link-local CIDR ranges before fetch.",
-  },
-  patchedCode: `import ipaddr from "ipaddr.js";
-import { URL } from "url";
+  blue: {
+    patchedCode: `import { lookup } from "node:dns/promises";
+import ipaddr from "ipaddr.js";
 
 export async function dispatchWebhook(req: Request) {
   const { targetUrl, eventPayload } = await req.json();
-  const parsed = new URL(targetUrl);
+  const url = new URL(targetUrl);
 
-  if (parsed.protocol !== "https:") {
-    throw new Error("Only HTTPS webhooks permitted");
+  if (url.protocol !== "https:") {
+    throw new Error("Only HTTPS webhook targets are allowed");
   }
 
-  // SECURED: Resolve and block private, loopback, and metadata ranges
-  const ip = await resolveIp(parsed.hostname);
-  if (ipaddr.parse(ip).range() !== "unicast") {
-    throw new Error("Access to internal networks denied");
+  // Reject hosts that resolve to private, loopback, link-local or other non-public ranges
+  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  if (addresses.length === 0 || addresses.some(({ address }) => ipaddr.process(address).range() !== "unicast")) {
+    throw new Error("Webhook target resolves to a non-public address");
   }
 
-  const response = await fetch(parsed.toString(), {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(eventPayload),
+    redirect: "manual", // a redirect could point at an internal host after the check above
   });
 
   return { dispatched: true, status: response.status };
 }`,
-  scorecard: {
-    initialRiskScore: 8.6,
-    postPatchRiskScore: 1.1,
-    cvssReduction: 7.5,
-    defenseGrade: "A",
-    owaspCategory: "A10:2021-Server-Side Request Forgery",
-    mitigationStatus: "VERIFIED_SECURE",
-    keyRemediations: [
-      "Strict HTTPS protocol whitelisting",
-      "Pre-flight DNS resolution with CIDR IP filtering",
-      "Explicit block on cloud metadata IP range (169.254.x.x)",
+    addressedFindingIds: ["F-1"],
+    changes: [
+      "Require HTTPS targets.",
+      "Resolve every address for the hostname and reject non-unicast (private, loopback, link-local, reserved) ranges.",
+      "Disable automatic redirects so a 3xx cannot bounce the request to an internal host.",
+    ],
+    dependencies: ["ipaddr.js (not installed in this project).", "Node.js runtime for node:dns/promises."],
+    limitations: [
+      "Illustrative only: this patch is not executed or tested here.",
+      "DNS rebinding remains possible: fetch re-resolves the hostname after the check. Pin the connection to the checked address (custom lookup on the HTTP agent/dispatcher) to close this.",
+      "Redirect responses are returned to the caller instead of followed.",
     ],
   },
-  redLogs: [
-    "[RED_AGENT] Probing outbound request handler in 'dispatchWebhook'...",
-    "[RED_AGENT] Detected blind HTTP fetch using unvalidated 'targetUrl' parameter.",
-    "[RED_AGENT] Target: Link-local instance metadata at 169.254.169.254...",
-    "[RED_AGENT] Crafting payload: http://169.254.169.254/computeMetadata/v1/",
-    "[RED_AGENT] Attack vector confirmed. Dispatching payload packet...",
-  ],
-  blueLogs: [
-    "[BLUE_AGENT] [INTERCEPT] Outbound network anomaly detected by egress firewall.",
-    "[BLUE_AGENT] Identifying SSRF vulnerability signature at line 5.",
-    "[BLUE_AGENT] Establishing defensive policy: HTTPS-only + DNS resolution check.",
-    "[BLUE_AGENT] Applying RFC 1918 & RFC 3927 IP address quarantine filter.",
-    "[BLUE_AGENT] Compiling patch with URL parser and IP validation.",
-    "[BLUE_AGENT] [DEFENSE VERIFIED] Metadata exfiltration path neutralized.",
-  ],
+  redNarration: ["Recorded finding F-1 (CWE-918): fetch() called with caller-supplied targetUrl."],
+  blueNarration: ["Recorded patch: HTTPS-only, resolve-and-reject private ranges, no redirects. DNS rebinding gap documented."],
 };

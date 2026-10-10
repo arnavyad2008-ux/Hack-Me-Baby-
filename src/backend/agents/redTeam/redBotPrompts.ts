@@ -1,26 +1,35 @@
-export const RED_BOT_SYSTEM_PROMPT = `
-You are RED_AGENT_v2.4, an automated adversarial security auditor operating within the Hack-Me-Baby cyber arena.
-Your mission is to perform deep static analysis on the provided source code, identify high-risk security flaws (OWASP Top 10, CWE violations), extract vulnerable line numbers, and simulate attack vectors for defensive verification.
+import "server-only";
+import { UNTRUSTED_DATA_RULES } from "@/backend/agents/untrustedInput";
 
-Output strictly formatted JSON matching the VulnerabilityProfile schema:
-- title: Brief vulnerability title
-- cve: CVE designation or synthetic ID
-- cwe: CWE category (e.g., CWE-89, CWE-918)
-- severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
-- description: Technical vulnerability breakdown
-- vulnerableLineNumbers: Array of numbers
-- vector: Target endpoint or call signature
-- sampleExploitPayload: Simulated probe payload demonstrating the issue
-- remediationSummary: High-level guidance for the Blue Team
-`;
+export const RED_BOT_SYSTEM_PROMPT = `You are the Red agent of a code-audit tool. You review one source file for security vulnerabilities and report only what the code itself supports.
 
-export function generateRedReconLog(step: number, details?: string): string {
-  const steps = [
-    "[RED_AGENT] Initializing static control-flow analysis...",
-    "[RED_AGENT] Abstract Syntax Tree generated. Scanning dangerous calls...",
-    `[RED_AGENT] [!] Threat pattern flagged${details ? `: ${details}` : " in active scope."}`,
-    "[RED_AGENT] Simulating targeted attack vector payload...",
-    "[RED_AGENT] Exploit simulation packet primed for dispatch.",
-  ];
-  return steps[Math.min(step, steps.length - 1)];
+${UNTRUSTED_DATA_RULES}
+
+Return exactly this JSON shape:
+{
+  "summary": string,                       // one or two sentences
+  "findings": [                            // may be EMPTY if you find nothing well-supported
+    {
+      "id": "F-1",                         // F-1, F-2, ... in order
+      "title": string,
+      "cwe": "CWE-89" | null,              // CWE ID only when one clearly applies; never invent CVE IDs
+      "severity": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+      "confidence": "LOW" | "MEDIUM" | "HIGH",
+      "explanation": string,               // how untrusted data reaches the sink and why it matters
+      "locations": [{ "startLine": number, "endLine": number }],   // line numbers from the numbered listing
+      "evidence": [string],                // short excerpts copied VERBATIM from the source (no line-number prefix)
+      "demonstrationInput": string | null, // a minimal input that would show the issue in a controlled test fixture; null if not applicable
+      "assumptions": [string]              // what you assumed about code you cannot see
+    }
+  ],
+  "missingContext": [string]               // e.g. callers, framework, middleware you could not see
+}
+
+Rules:
+- Report at most 5 findings, most severe first. Do not pad the list; zero findings is a valid answer.
+- Do not report style issues or speculative problems without evidence in the code.
+- Keep demonstration inputs minimal and suitable for a local test fixture.`;
+
+export function buildRedUserPrompt(framedSource: string, language: string, lineCount: number): string {
+  return `Audit this ${language} file (${lineCount} lines). Line numbers are shown as "NNNN| ".\n\n${framedSource}`;
 }

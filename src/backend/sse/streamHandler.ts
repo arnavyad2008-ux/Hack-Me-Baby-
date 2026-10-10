@@ -1,72 +1,75 @@
-import { StreamEventPayload } from "@/shared/types";
-import { AuditExecutionResult } from "@/backend/services/auditService";
+import "server-only";
+import { StreamEventSchema, type StreamEvent, type StreamEventInput } from "@/shared/contracts/events";
+import { encodeSseData } from "@/shared/sse/sseParser";
+import { isCancellation, toRunError, type Emit } from "@/backend/services/pipelineSupport";
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export type Pipeline = (emit: Emit, signal: AbortSignal) => Promise<void>;
 
-export function createAuditSSEStream(auditData: AuditExecutionResult): ReadableStream {
-  return new ReadableStream({
-    async start(controller) {
-      const send = (payload: StreamEventPayload) => {
-        const message = `data: ${JSON.stringify(payload)}\n\n`;
-        controller.enqueue(new TextEncoder().encode(message));
+const HEARTBEAT_MS = 15_000;
+
+/**
+ * Runs `pipeline` and streams its events as SSE. Every event is validated, stamped
+ * with runId/seq, and the stream always ends with exactly one terminal event unless
+ * the client disconnected. Client disconnect (or `requestSignal`) aborts the pipeline.
+ */
+export function createEventStream(runId: string, pipeline: Pipeline, requestSignal?: AbortSignal): ReadableStream<Uint8Array> {
+  const abort = new AbortController();
+  const encoder = new TextEncoder();
+  let closed = false;
+  let terminalSent = false;
+  let seq = 0;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+  const onRequestAbort = () => abort.abort();
+  requestSignal?.addEventListener("abort", onRequestAbort, { once: true });
+
+  const shutdown = () => {
+    closed = true;
+    clearInterval(heartbeat);
+    requestSignal?.removeEventListener("abort", onRequestAbort);
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (text: string) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(text));
+        } catch {
+          shutdown();
+          abort.abort();
+        }
       };
+      const emit: Emit = (input: StreamEventInput) => {
+        if (closed || terminalSent) return;
+        const event: StreamEvent = StreamEventSchema.parse({ ...input, runId, seq: seq++ });
+        if (event.type === "run.completed" || event.type === "run.error") terminalSent = true;
+        write(encodeSseData(event));
+      };
+      heartbeat = setInterval(() => write(": ping\n\n"), HEARTBEAT_MS);
 
-      // Phase 1: RED_RECON
-      for (const log of auditData.redLogs.slice(0, 4)) {
-        send({ phase: "RED_RECON", type: "recon", text: log });
-        await sleep(650);
-      }
-
-      // Phase 2: RED_EXPLOIT
-      for (const log of auditData.redLogs.slice(4)) {
-        send({ phase: "RED_EXPLOIT", type: "recon", text: log });
-        await sleep(500);
-      }
-      send({
-        phase: "RED_EXPLOIT",
-        type: "exploit",
-        text: `[RED_AGENT] Payload armed: ${auditData.vulnerability.sampleExploitPayload}`,
-        data: { vulnerability: auditData.vulnerability },
-      });
-      await sleep(1000);
-
-      // Phase 3: BLUE_INTERCEPT
-      send({
-        phase: "BLUE_INTERCEPT",
-        type: "intercept",
-        text: auditData.blueLogs[0] || "[BLUE_AGENT] Threat intercepted!",
-      });
-      await sleep(700);
-
-      for (const log of auditData.blueLogs.slice(1, 4)) {
-        send({ phase: "BLUE_INTERCEPT", type: "intercept", text: log });
-        await sleep(600);
-      }
-
-      // Phase 4: BLUE_PATCH
-      for (const log of auditData.blueLogs.slice(4)) {
-        send({ phase: "BLUE_PATCH", type: "patch", text: log });
-        await sleep(550);
-      }
-      send({
-        phase: "BLUE_PATCH",
-        type: "patch",
-        text: "[BLUE_AGENT] Synthesis complete. Mounting defensive DiffEditor.",
-        data: { patchedCode: auditData.patchedCode },
-      });
-      await sleep(900);
-
-      // Phase 5: RESOLVED
-      send({
-        phase: "RESOLVED",
-        type: "scorecard",
-        text: "[BLUE_AGENT] Audit cycle completed. System secured.",
-        data: { scorecard: auditData.scorecard },
-      });
-
-      controller.close();
+      void pipeline(emit, abort.signal)
+        .then(() => {
+          if (!terminalSent && !abort.signal.aborted) {
+            emit({ type: "run.error", error: { code: "INTERNAL", message: "The audit ended without a result.", retryable: true } });
+          }
+        })
+        .catch((err: unknown) => {
+          if (!isCancellation(err, abort.signal)) emit({ type: "run.error", error: toRunError(err) });
+        })
+        .finally(() => {
+          if (closed) return;
+          shutdown();
+          try {
+            controller.close();
+          } catch {
+            // Already closed by a cancelled reader.
+          }
+        });
+    },
+    cancel() {
+      shutdown();
+      abort.abort();
     },
   });
 }

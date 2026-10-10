@@ -1,64 +1,38 @@
-import { DuelResponse } from "@/shared/types";
+import "server-only";
+import type { SupportedLanguage } from "@/shared/contracts/limits";
+import type { DuelProbeResult } from "@/shared/types";
+import type { IsolatedRunner } from "@/backend/verification/isolatedRunner";
+import { runSqliFixture, sqliFixtureApplicability } from "@/backend/verification/sqliFixture";
+import { syntaxErrors } from "@/backend/verification/tsAnalysis";
 
-export class DuelService {
-  public static evaluatePayload(
-    targetCode: string,
-    patchedCode: string | null,
-    customPayload: string
-  ): DuelResponse {
-    const trimmed = customPayload.trim();
-    if (!trimmed) {
-      return {
-        bypassed: false,
-        statusCode: 400,
-        statusText: "EMPTY_PAYLOAD",
-        feedback: "Please provide a test payload string.",
-        responsePayload: "ERR: No payload received",
-      };
-    }
+export interface DuelInput {
+  original: string;
+  patched: string;
+  language: SupportedLanguage;
+  username: string;
+  password: string;
+}
 
-    // If patched code exists and active, the defense intercepts
-    if (patchedCode) {
-      const isSqlInjectionPattern = /'|--|OR|SELECT|UNION|;|DROP/i.test(trimmed);
-      const isSsrfPattern = /169\.254|localhost|127\.0\.0\.1|file:\/\//i.test(trimmed);
-
-      if (isSqlInjectionPattern || isSsrfPattern) {
-        return {
-          bypassed: false,
-          statusCode: 403,
-          statusText: "403 FORBIDDEN // BLOCKED BY BLUE SENTINEL",
-          feedback: `[INTERCEPTED] Blue Bot defense detected hostile token vector. Parameterized query / IP filter quarantined input safely.`,
-          responsePayload: `{"status": 403, "error": "Blocked by Zero-Trust Boundary Guard", "vector": "${trimmed}"}`,
-        };
-      }
-
-      return {
-        bypassed: false,
-        statusCode: 200,
-        statusText: "200 OK // BENIGN INPUT PROCESSED",
-        feedback: `Input treated as sanitized string parameter. Zero control-flow hijacking occurred.`,
-        responsePayload: `{"status": 200, "result": "Safe execution verified"}`,
-      };
-    }
-
-    // If unpatched, dangerous tokens succeed against the raw code
-    const exploits = /'|--|1=1|169\.254|admin/i.test(trimmed);
-    if (exploits) {
-      return {
-        bypassed: true,
-        statusCode: 200,
-        statusText: "200 OK // EXPLOIT TRIGGERED",
-        feedback: `[!] CRITICAL: Payload successfully evaluated in raw SQL/network sink! System compromised. Apply Blue Team patch immediately.`,
-        responsePayload: `{"status": 200, "session": "ADMIN_TAUTOLOGY_BYPASS", "token": "EXPLOITED_JWT"}`,
-      };
-    }
-
-    return {
-      bypassed: false,
-      statusCode: 401,
-      statusText: "401 INVALID_CREDENTIALS",
-      feedback: "Payload rejected by standard logic.",
-      responsePayload: `{"status": 401, "error": "Invalid input"}`,
-    };
+/** Runs a user-supplied login probe against the original and patched code in the SQLi fixture. */
+export async function runDuelProbe(input: DuelInput, runner: IsolatedRunner, signal: AbortSignal): Promise<DuelProbeResult> {
+  if (syntaxErrors(input.patched, input.language).length > 0 || syntaxErrors(input.original, input.language).length > 0) {
+    return { available: false, message: "Code has syntax errors, so it cannot be executed in the fixture." };
   }
+  const applicability = sqliFixtureApplicability(input.original, input.patched, input.language);
+  if (!applicability.applicable) return { available: false, message: applicability.reason };
+  const availability = await runner.availability();
+  if (!availability.ok) return { available: false, message: availability.reason };
+
+  const run = await runSqliFixture(runner, input.original, input.patched, input.language, signal, [
+    { username: input.username, password: input.password },
+  ]);
+  if (!run.ok) return { available: false, message: run.reason };
+  const probe = run.output.probes[0];
+  if (!probe) return { available: false, message: run.output.loadError ?? "The fixture could not load the code." };
+  return {
+    available: true,
+    message: "Probe executed in the isolated SQLi fixture.",
+    original: probe.original,
+    candidate: probe.candidate,
+  };
 }

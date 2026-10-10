@@ -1,27 +1,35 @@
 import { NextRequest } from "next/server";
-import { DuelService } from "@/backend/services/duelService";
 import { z } from "zod";
+import { MAX_SOURCE_CHARS, SUPPORTED_LANGUAGES } from "@/shared/contracts/limits";
+import { runDuelProbe } from "@/backend/services/duelService";
+import { getAuditRuntime } from "@/backend/services/runtime";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const DuelSchema = z.object({
-  targetCode: z.string(),
-  patchedCode: z.string().nullable(),
-  customPayload: z.string(),
+  original: z.string().min(1).max(MAX_SOURCE_CHARS),
+  patched: z.string().min(1).max(MAX_SOURCE_CHARS * 2),
+  language: z.enum(SUPPORTED_LANGUAGES),
+  username: z.string().max(200),
+  password: z.string().max(200),
 });
 
 export async function POST(req: NextRequest) {
+  let body: unknown;
   try {
-    const body = await req.json();
-    const { targetCode, patchedCode, customPayload } = DuelSchema.parse(body);
-
-    const result = DuelService.evaluatePayload(targetCode, patchedCode, customPayload);
-    return new Response(JSON.stringify(result), {
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Duel evaluation failed";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    body = await req.json();
+  } catch {
+    return Response.json({ error: { message: "Request body must be JSON." } }, { status: 400 });
+  }
+  const parsed = DuelSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: { message: "Invalid duel request." } }, { status: 400 });
+  }
+  try {
+    const result = await runDuelProbe(parsed.data, getAuditRuntime().runner, req.signal);
+    return Response.json(result);
+  } catch {
+    return Response.json({ error: { message: "Probe failed to run." } }, { status: 500 });
   }
 }

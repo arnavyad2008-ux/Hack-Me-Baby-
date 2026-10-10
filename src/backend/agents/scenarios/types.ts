@@ -1,10 +1,11 @@
-import { PresetSnippet, VulnerabilityProfile, SecurityScorecard } from "@/shared/types";
+import type { BlueResult, ModelRedOutput } from "@/shared/contracts/findings";
+import type { PresetId } from "@/shared/presets/snippets";
 
-export interface PresetScenario {
-  snippet: PresetSnippet;
-  vulnerability: VulnerabilityProfile;
-  patchedCode: string;
-  scorecard: SecurityScorecard;
-  redLogs: string[];
-  blueLogs: string[];
+/** Recorded demo content. Everything here is illustrative playback, not tool output. */
+export interface DemoScenario {
+  presetId: PresetId;
+  red: ModelRedOutput;
+  blue: BlueResult;
+  redNarration: string[];
+  blueNarration: string[];
 }

@@ -1,95 +1,65 @@
-import { ScannedFileReport } from "@/shared/types";
+import "server-only";
+import { languageForFileName, MAX_SOURCE_CHARS } from "@/shared/contracts/limits";
+import type { ScannedFileReport } from "@/shared/types";
 
-export class RepoScanService {
-  public static async scanRepository(repoInput: string): Promise<ScannedFileReport[]> {
-    // Parse owner/repo from URL or string
-    const clean = repoInput.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
-    const parts = clean.split("/").filter(Boolean);
-    if (parts.length < 2) {
-      throw new Error("Invalid GitHub repository format. Use 'owner/repo' or full URL.");
-    }
-    const [owner, repo] = parts;
+const GITHUB_HEADERS = { "User-Agent": "Hack-Me-Baby-Repo-Ingest", Accept: "application/vnd.github+json" };
+const NAME = /^[A-Za-z0-9_.-]{1,100}$/;
+const SQL_HINT = /\b(SELECT|INSERT|UPDATE|DELETE)\b[\s\S]{0,200}(\+|\$\{)/i;
+const MAX_FILES = 8;
 
-    try {
-      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`, {
-        headers: { "User-Agent": "Hack-Me-Baby-Security-Audit" },
-      });
-
-      if (!res.ok) {
-        // Fallback to master if main fails
-        const fallbackRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`, {
-          headers: { "User-Agent": "Hack-Me-Baby-Security-Audit" },
-        });
-        if (!fallbackRes.ok) {
-          return this.getMockRepoResults(owner, repo);
-        }
-        const data = await fallbackRes.json();
-        return this.processTree(owner, repo, data.tree);
-      }
-
-      const data = await res.json();
-      return this.processTree(owner, repo, data.tree);
-    } catch {
-      return this.getMockRepoResults(owner, repo);
-    }
+export function parseRepoInput(input: string): { owner: string; repo: string } {
+  const clean = input.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/, "").replace(/\/$/, "");
+  const [owner, repo] = clean.split("/");
+  if (!owner || !repo || !NAME.test(owner) || !NAME.test(repo)) {
+    throw new Error("Use 'owner/repo' or a https://github.com/owner/repo URL.");
   }
+  return { owner, repo };
+}
 
-  private static async processTree(
-    owner: string,
-    repo: string,
-    tree: Array<{ path: string; type: string }>
-  ): Promise<ScannedFileReport[]> {
-    const candidateFiles = tree
-      .filter((node) => node.type === "blob" && /\.(ts|js|py|sql)$/i.test(node.path))
-      .slice(0, 5);
+async function getJson(url: string): Promise<unknown> {
+  const res = await fetch(url, { headers: GITHUB_HEADERS, signal: AbortSignal.timeout(8_000) });
+  if (!res.ok) throw new Error(`GitHub API returned HTTP ${res.status}.`);
+  return res.json();
+}
 
-    const reports: ScannedFileReport[] = [];
-    for (const file of candidateFiles) {
-      try {
-        const rawRes = await fetch(
-          `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${file.path}`
-        );
-        const code = await rawRes.text();
-        const isSql = /SELECT|db\.|query/i.test(code);
-        reports.push({
-          path: file.path,
-          severity: isSql ? "CRITICAL" : "HIGH",
-          cwe: isSql ? "CWE-89" : "CWE-20",
-          snippet: code.slice(0, 500),
-          explanation: isSql
-            ? "Unparameterized SQL sinks detected in file AST."
-            : "Untrusted input flow to network boundary.",
-        });
-      } catch {
-        // continue
-      }
-    }
-    return reports.length > 0 ? reports : this.getMockRepoResults(owner, repo);
+/** Lists supported source files from a public repo. Results are leads for a Live audit, not findings. */
+export async function scanRepository(input: string): Promise<ScannedFileReport[]> {
+  const { owner, repo } = parseRepoInput(input);
+  const meta = await getJson(`https://api.github.com/repos/${owner}/${repo}`);
+  const branch =
+    typeof meta === "object" && meta !== null && "default_branch" in meta && typeof meta.default_branch === "string"
+      ? meta.default_branch
+      : "main";
+  const tree = await getJson(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+  const nodes = typeof tree === "object" && tree !== null && "tree" in tree && Array.isArray(tree.tree) ? tree.tree : [];
+
+  const paths = nodes
+    .filter((n): n is { path: string; type: string; size?: number } =>
+      typeof n === "object" && n !== null && typeof n.path === "string" && n.type === "blob")
+    .filter((n) => languageForFileName(n.path) !== null && !/(^|\/)(node_modules|dist|build|\.next)\//.test(n.path))
+    .filter((n) => (n.size ?? 0) <= MAX_SOURCE_CHARS)
+    .map((n) => n.path);
+
+  const reports: ScannedFileReport[] = [];
+  for (const path of paths.slice(0, 40)) {
+    if (reports.length >= MAX_FILES) break;
+    const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${path.split("/").map(encodeURIComponent).join("/")}`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) continue;
+    const code = await res.text();
+    if (code.length > MAX_SOURCE_CHARS) continue;
+    const sqlHint = SQL_HINT.test(code);
+    reports.push({
+      path,
+      label: sqlHint ? "Keyword match: SQL built with + or ${}" : "Source file",
+      snippet: code,
+      explanation: sqlHint
+        ? "Text pattern match only. Load it and run a Live audit to analyse it."
+        : "No keyword match. Load it and run a Live audit to analyse it.",
+      loadable: true,
+    });
   }
-
-  private static getMockRepoResults(owner: string, repo: string): ScannedFileReport[] {
-    return [
-      {
-        path: "src/auth/loginService.ts",
-        severity: "CRITICAL",
-        cwe: "CWE-89",
-        snippet: `export async function login(user, pass) {\n  return db.raw("SELECT * FROM users WHERE user = '" + user + "'");\n}`,
-        explanation: "Raw SQL concatenation permits authentication bypass.",
-      },
-      {
-        path: "src/webhooks/dispatcher.ts",
-        severity: "HIGH",
-        cwe: "CWE-918",
-        snippet: `export async function postWebhook(url, data) {\n  return fetch(url, { body: JSON.stringify(data) });\n}`,
-        explanation: "Unvalidated URL fetch allows SSRF attacks on cloud metadata.",
-      },
-      {
-        path: "src/api/documentParser.ts",
-        severity: "MEDIUM",
-        cwe: "CWE-22",
-        snippet: `export function readDoc(fileName) {\n  return fs.readFileSync("/data/" + fileName);\n}`,
-        explanation: "Path traversal hazard via unsanitized file path.",
-      },
-    ];
-  }
+  if (reports.length === 0) throw new Error("No TypeScript/JavaScript files under the size limit were found.");
+  return reports.sort((a, b) => Number(b.label !== "Source file") - Number(a.label !== "Source file"));
 }
