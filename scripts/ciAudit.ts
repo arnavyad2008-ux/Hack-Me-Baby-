@@ -53,8 +53,9 @@ function walkDir(dir: string): string[] {
 }
 
 console.log("=================================================");
-console.log("🛡️  HACK ME BABY // CI/CD ADVERSARIAL AUDIT BOT");
+console.log("HACK ME BABY // CI heuristic pattern scan (advisory)");
 console.log("=================================================");
+console.log("Two regex patterns (string-built SQL, fetch on a variable). Matches are leads, not confirmed findings.");
 
 const srcDir = path.resolve(process.cwd(), "src");
 const allFiles = fs.existsSync(srcDir) ? walkDir(srcDir) : [];
@@ -65,15 +66,14 @@ for (const file of allFiles) {
 }
 
 if (allIssues.length === 0) {
-  console.log("\n✅ [VERIFIED SECURE] No unmitigated attack vectors detected in codebase.");
-  console.log("Defense Grade: A+ | CVSS Risk: 0.0\n");
-  process.exit(0);
+  console.log("\nNo matches for the heuristic patterns. This does not mean the code is free of vulnerabilities.\n");
 } else {
-  console.log(`\n⚠️  [ALERT] Detected ${allIssues.length} potential attack surface(s):\n`);
+  console.log(`\n${allIssues.length} pattern match(es) to review:\n`);
   allIssues.forEach((issue) => {
-    console.log(` - [${issue.severity}] ${issue.cwe}`);
+    console.log(` - [${issue.severity}?] ${issue.cwe} (pattern match)`);
     console.log(`   Location: ${issue.file}:${issue.line}`);
-    console.log(`   Vector: ${issue.vector}\n`);
+    console.log(`   Pattern: ${issue.vector}\n`);
   });
-  process.exit(0);
 }
+// Advisory only: never fails the build.
+process.exit(0);
