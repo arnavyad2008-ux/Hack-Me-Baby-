@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { GitBranch, Search, Loader2, X, AlertTriangle, ArrowRight } from "lucide-react";
+import { Globe, GitBranch, Search, Loader2, X, ArrowRight, ShieldCheck } from "lucide-react";
 import { useCyberArena } from "@/frontend/hooks/useCyberArenaState";
 import { ScannedFileReport } from "@/shared/types";
 import { getSeverityColor } from "@/shared/utils/formatters";
 
 export function RepoIngestModal() {
   const { isRepoModalOpen, setRepoModalOpen, setTargetCode, setPhase } = useCyberArena();
-  const [repoUrl, setRepoUrl] = useState("arnavyad2008-ux/Hack-Me-Baby-");
+  const [targetUrl, setTargetUrl] = useState("https://my-dummy-site.vercel.app");
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<ScannedFileReport[]>([]);
+  const [scanMode, setScanMode] = useState<"LIVE_WEB" | "REPO">("LIVE_WEB");
   const [error, setError] = useState<string | null>(null);
 
   if (!isRepoModalOpen) return null;
@@ -22,13 +23,14 @@ export function RepoIngestModal() {
       const res = await fetch("/api/repo-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl }),
+        body: JSON.stringify({ url: targetUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Scan failed");
       setFiles(data.files || []);
+      setScanMode(data.mode || "LIVE_WEB");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error scanning repository");
+      setError(err instanceof Error ? err.message : "Error scanning target");
     } finally {
       setLoading(false);
     }
@@ -45,20 +47,24 @@ export function RepoIngestModal() {
       <div className="w-full max-w-2xl bg-cyber-panel border border-cyber-border rounded-lg shadow-2xl p-5 text-xs text-slate-200">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2 font-bold text-sm text-slate-100">
-            <GitBranch className="w-4 h-4 text-cyber-blue" />
-            <span>INGEST GITHUB REPOSITORY</span>
+            <Globe className="w-4 h-4 text-cyber-blue" />
+            <span>INGEST TARGET (LIVE WEB URL OR GITHUB REPO)</span>
           </div>
           <button onClick={() => setRepoModalOpen(false)} className="text-slate-500 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="my-4 flex gap-2">
+        <div className="mt-3 text-[11px] text-slate-400">
+          Paste any live website URL (e.g. <span className="text-cyber-blue">https://my-dummy-site.com</span>) to audit HTTP headers, CORS, and endpoint attack surfaces, or a GitHub repo (e.g. <span className="text-cyber-blue">owner/repo</span>).
+        </div>
+
+        <div className="my-3 flex gap-2">
           <input
             type="text"
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="owner/repo (e.g. arnavyad2008-ux/Hack-Me-Baby-)"
+            value={targetUrl}
+            onChange={(e) => setTargetUrl(e.target.value)}
+            placeholder="https://your-dummy-site.com or owner/repo"
             className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-cyber-blue"
           />
           <button
@@ -67,7 +73,7 @@ export function RepoIngestModal() {
             className="flex items-center gap-1.5 px-4 py-2 bg-cyber-blue text-black font-bold rounded hover:bg-cyber-blue-glow transition-all"
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-            <span>SCAN REPO</span>
+            <span>AUDIT TARGET</span>
           </button>
         </div>
 

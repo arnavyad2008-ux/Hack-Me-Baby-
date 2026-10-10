@@ -55,14 +55,14 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2.5">
-        {/* GitHub Ingest Button */}
+        {/* Target Ingest (Git & Web) Button */}
         <button
           onClick={() => setRepoModalOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-700 bg-slate-900 text-slate-300 hover:text-white hover:border-cyber-blue transition-colors"
-          title="Scan a GitHub repository"
+          title="Ingest GitHub repo or Live Website URL"
         >
           <GitBranch className="w-3.5 h-3.5 text-cyber-blue" />
-          <span className="hidden sm:inline">Git Ingest</span>
+          <span className="hidden sm:inline">URL Ingest</span>
         </button>
 
         {/* AI Brain Switcher */}
