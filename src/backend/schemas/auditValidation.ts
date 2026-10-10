@@ -7,6 +7,7 @@ export const AuditRequestSchema = z.object({
     .max(50000, "Code snippet exceeds max payload size"),
   language: z.string().default("typescript"),
   presetId: z.string().optional(),
+  aiMode: z.enum(["HUGGING_FACE", "SIMMY_LOCAL", "STATIC_AST"]).optional(),
 });
 
 export type AuditRequestInput = z.infer<typeof AuditRequestSchema>;

@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Code2, GitCompare, Award, Upload } from "lucide-react";
+import { Code2, GitCompare, Award, Upload, Box } from "lucide-react";
 import { useCyberArena } from "@/frontend/hooks/useCyberArenaState";
 
 export function EditorHeader() {
   const {
-    isDiffView,
-    toggleDiffView,
+    editorView,
+    setEditorView,
     patchedCode,
     scorecard,
     setTargetCode,
@@ -54,25 +54,42 @@ export function EditorHeader() {
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        {patchedCode && (
+      <div className="flex items-center gap-1.5">
+        <div className="flex bg-slate-950 p-0.5 rounded border border-slate-800">
           <button
-            onClick={toggleDiffView}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors ${
-              isDiffView
-                ? "bg-cyber-blue/20 text-cyber-blue border border-cyber-blue"
-                : "bg-slate-800 text-slate-300 hover:text-white border border-slate-700"
+            onClick={() => setEditorView("CODE")}
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+              editorView === "CODE" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <GitCompare className="w-3.5 h-3.5" />
-            {isDiffView ? "View Original" : "Compare Patch Diff"}
+            Code
           </button>
-        )}
+          <button
+            onClick={() => setEditorView("DIFF")}
+            disabled={!patchedCode}
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+              editorView === "DIFF"
+                ? "bg-cyber-blue text-black font-bold"
+                : "text-slate-400 hover:text-slate-200 disabled:opacity-40"
+            }`}
+          >
+            Diff Patch
+          </button>
+          <button
+            onClick={() => setEditorView("SANDBOX")}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
+              editorView === "SANDBOX" ? "bg-cyber-red text-black font-bold" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Box className="w-3 h-3" />
+            <span>Sandbox DAST</span>
+          </button>
+        </div>
 
         {scorecard && (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500 font-bold">
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500 font-bold ml-1">
             <Award className="w-3.5 h-3.5" />
-            GRADE: {scorecard.defenseGrade}
+            {scorecard.defenseGrade}
           </span>
         )}
       </div>

@@ -10,6 +10,7 @@ export function useAgentStream() {
   const {
     targetCode,
     activePresetId,
+    aiMode,
     setPhase,
     appendRedStream,
     appendBlueStream,
@@ -66,6 +67,7 @@ export function useAgentStream() {
         body: JSON.stringify({
           code: targetCode,
           presetId: activePresetId,
+          aiMode,
         }),
         signal: abortControllerRef.current.signal,
       });

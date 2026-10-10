@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { ArenaPhase, VulnerabilityProfile, SecurityScorecard } from "@/shared/types";
+import {
+  ArenaPhase,
+  VulnerabilityProfile,
+  SecurityScorecard,
+  AIMode,
+  EditorViewMode,
+} from "@/shared/types";
 import {
   getPresetById,
   DEFAULT_PRESET_ID,
@@ -14,7 +20,9 @@ export interface ArenaState {
   activeVulnerability: VulnerabilityProfile | null;
   scorecard: SecurityScorecard | null;
   activePresetId: string;
-  isDiffView: boolean;
+  editorView: EditorViewMode;
+  aiMode: AIMode;
+  isRepoModalOpen: boolean;
   soundEnabled: boolean;
   setPhase: (phase: ArenaPhase) => void;
   setTargetCode: (code: string) => void;
@@ -24,7 +32,9 @@ export interface ArenaState {
   setActiveVulnerability: (vuln: VulnerabilityProfile | null) => void;
   setScorecard: (scorecard: SecurityScorecard | null) => void;
   loadPreset: (presetId: string) => void;
-  toggleDiffView: () => void;
+  setEditorView: (view: EditorViewMode) => void;
+  setAiMode: (mode: AIMode) => void;
+  setRepoModalOpen: (open: boolean) => void;
   toggleSound: () => void;
   resetArena: () => void;
 }
@@ -40,7 +50,9 @@ export const useCyberArena = create<ArenaState>((set) => ({
   activeVulnerability: null,
   scorecard: null,
   activePresetId: DEFAULT_PRESET_ID,
-  isDiffView: false,
+  editorView: "CODE",
+  aiMode: "HUGGING_FACE",
+  isRepoModalOpen: false,
   soundEnabled: true,
 
   setPhase: (phase) => set({ phase }),
@@ -65,11 +77,13 @@ export const useCyberArena = create<ArenaState>((set) => ({
       activeVulnerability: null,
       scorecard: null,
       phase: "TARGET_ACQUIRED",
-      isDiffView: false,
+      editorView: "CODE",
     });
   },
 
-  toggleDiffView: () => set((state) => ({ isDiffView: !state.isDiffView })),
+  setEditorView: (editorView) => set({ editorView }),
+  setAiMode: (aiMode) => set({ aiMode }),
+  setRepoModalOpen: (isRepoModalOpen) => set({ isRepoModalOpen }),
   toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
 
   resetArena: () => {
@@ -82,7 +96,7 @@ export const useCyberArena = create<ArenaState>((set) => ({
       blueBotStream: [],
       activeVulnerability: null,
       scorecard: null,
-      isDiffView: false,
+      editorView: "CODE",
     });
   },
 }));

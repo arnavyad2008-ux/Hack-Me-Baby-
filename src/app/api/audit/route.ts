@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { code, presetId } = parseResult.data;
-    const auditData = await AuditService.executeAudit(code, presetId);
+    const { code, presetId, aiMode } = parseResult.data;
+    const auditData = await AuditService.executeAudit(code, presetId, aiMode);
     const stream = createAuditSSEStream(auditData);
 
     return new Response(stream, {

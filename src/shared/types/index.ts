@@ -9,6 +9,10 @@ export type ArenaPhase =
 
 export type VulnerabilitySeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
+export type AIMode = "HUGGING_FACE" | "SIMMY_LOCAL" | "STATIC_AST";
+
+export type EditorViewMode = "CODE" | "DIFF" | "SANDBOX";
+
 export interface VulnerabilityProfile {
   id: string;
   title: string;
@@ -50,4 +54,20 @@ export interface PresetSnippet {
   code: string;
   description: string;
   vulnerabilityType: string;
+}
+
+export interface ScannedFileReport {
+  path: string;
+  severity: VulnerabilitySeverity;
+  cwe: string;
+  snippet: string;
+  explanation: string;
+}
+
+export interface DuelResponse {
+  bypassed: boolean;
+  statusCode: number;
+  statusText: string;
+  feedback: string;
+  responsePayload: string;
 }

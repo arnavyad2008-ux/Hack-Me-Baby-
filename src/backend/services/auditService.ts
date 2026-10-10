@@ -1,9 +1,10 @@
-import { VulnerabilityProfile, SecurityScorecard } from "@/shared/types";
+import { VulnerabilityProfile, SecurityScorecard, AIMode } from "@/shared/types";
 import {
   getPresetById,
   DEFAULT_PRESET_ID,
 } from "@/backend/agents/scenarios/vulnerabilityDatabase";
 import { HuggingFaceService } from "./huggingFaceService";
+import { SimmyService } from "./simmyService";
 
 export interface AuditExecutionResult {
   vulnerability: VulnerabilityProfile;
@@ -16,7 +17,8 @@ export interface AuditExecutionResult {
 export class AuditService {
   public static async executeAudit(
     code: string,
-    presetId?: string
+    presetId?: string,
+    aiMode: AIMode = "HUGGING_FACE"
   ): Promise<AuditExecutionResult> {
     const selectedScenario = getPresetById(presetId || DEFAULT_PRESET_ID);
 
@@ -31,30 +33,52 @@ export class AuditService {
       };
     }
 
-    // Try Hugging Face AI Brain first
-    const hfVuln = await HuggingFaceService.analyzeVulnerability(code);
-    if (hfVuln) {
-      const hfPatch = await HuggingFaceService.generateDefensivePatch(code, hfVuln);
-      if (hfPatch) {
-        return {
-          vulnerability: hfVuln,
-          patchedCode: hfPatch.patchedCode,
-          scorecard: hfPatch.scorecard,
-          redLogs: [
-            "[RED_AGENT // HF-QWEN-CODER] Initializing neural control-flow analysis...",
-            `[RED_AGENT // HF-QWEN-CODER] Detected ${hfVuln.cwe}: ${hfVuln.title}`,
-            `[RED_AGENT // HF-QWEN-CODER] Exploit payload synthesized: ${hfVuln.sampleExploitPayload}`,
-          ],
-          blueLogs: [
-            "[BLUE_AGENT // HF-QWEN-CODER] Threat telemetry intercepted from Red Bot.",
-            "[BLUE_AGENT // HF-QWEN-CODER] Formulating defensive boundary verification...",
-            "[BLUE_AGENT // HF-QWEN-CODER] Neural patch synthesized with zero syntax regressions.",
-          ],
-        };
+    // Branch 1: Simmy Local Model Mode
+    if (aiMode === "SIMMY_LOCAL") {
+      const simmy = await SimmyService.analyzeWithSimmy(code);
+      return {
+        vulnerability: simmy.vulnerability,
+        patchedCode: simmy.patchedCode,
+        scorecard: simmy.scorecard,
+        redLogs: [
+          "[RED_AGENT // SIMMY_LOCAL] Invoking local air-gapped LoRA model...",
+          "[RED_AGENT // SIMMY_LOCAL] Running on-device control-flow inference...",
+          `[RED_AGENT // SIMMY_LOCAL] Identified ${simmy.vulnerability.cwe} without network egress.`,
+        ],
+        blueLogs: [
+          "[BLUE_AGENT // SIMMY_LOCAL] Intercepted threat telemetry locally.",
+          "[BLUE_AGENT // SIMMY_LOCAL] Zero-trust parameterization synthesized on-prem.",
+          "[BLUE_AGENT // SIMMY_LOCAL] Verification complete. Enterprise privacy 100%.",
+        ],
+      };
+    }
+
+    // Branch 2: Hugging Face Cloud Brain
+    if (aiMode === "HUGGING_FACE") {
+      const hfVuln = await HuggingFaceService.analyzeVulnerability(code);
+      if (hfVuln) {
+        const hfPatch = await HuggingFaceService.generateDefensivePatch(code, hfVuln);
+        if (hfPatch) {
+          return {
+            vulnerability: hfVuln,
+            patchedCode: hfPatch.patchedCode,
+            scorecard: hfPatch.scorecard,
+            redLogs: [
+              "[RED_AGENT // HF-QWEN-CODER] Initializing neural control-flow analysis...",
+              `[RED_AGENT // HF-QWEN-CODER] Detected ${hfVuln.cwe}: ${hfVuln.title}`,
+              `[RED_AGENT // HF-QWEN-CODER] Exploit payload synthesized: ${hfVuln.sampleExploitPayload}`,
+            ],
+            blueLogs: [
+              "[BLUE_AGENT // HF-QWEN-CODER] Threat telemetry intercepted from Red Bot.",
+              "[BLUE_AGENT // HF-QWEN-CODER] Formulating defensive boundary verification...",
+              "[BLUE_AGENT // HF-QWEN-CODER] Neural patch synthesized with zero syntax regressions.",
+            ],
+          };
+        }
       }
     }
 
-    // Fallback to local static AST analyzer
+    // Branch 3: Static AST Engine Fallback
     return this.analyzeCustomCode(code);
   }
 
