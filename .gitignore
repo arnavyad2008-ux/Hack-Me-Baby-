@@ -25,6 +25,9 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# IDE
+.vscode/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
