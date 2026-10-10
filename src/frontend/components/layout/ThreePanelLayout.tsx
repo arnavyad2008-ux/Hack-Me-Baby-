@@ -14,7 +14,7 @@ export function ThreePanelLayout({
   rightPanel,
 }: ThreePanelLayoutProps) {
   return (
-    <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-3 p-4 min-h-0 overflow-hidden bg-cyber-bg">
+    <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-3 p-2 sm:p-4 min-h-0 overflow-y-auto xl:overflow-hidden bg-cyber-bg">
       <section className="xl:col-span-3 flex flex-col min-h-[320px] xl:min-h-0 overflow-hidden rounded-lg border border-cyber-border bg-cyber-panel shadow-lg">
         {leftPanel}
       </section>

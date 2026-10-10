@@ -1,3 +1,4 @@
+import "server-only";
 import type { DemoScenario } from "./types";
 
 export const sqliScenario: DemoScenario = {

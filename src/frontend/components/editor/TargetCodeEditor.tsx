@@ -2,21 +2,24 @@
 
 import React from "react";
 import Editor from "@monaco-editor/react";
-import { useCyberArena } from "@/frontend/hooks/useCyberArenaState";
 import { Loader2 } from "lucide-react";
+import { useCyberArena } from "@/frontend/hooks/useCyberArenaState";
+import { isActivePhase } from "@/frontend/state/phaseMachine";
 
 export function TargetCodeEditor() {
-  const { targetCode, setTargetCode, phase } = useCyberArena();
-  const isReadOnly = phase !== "IDLE" && phase !== "TARGET_ACQUIRED";
+  const code = useCyberArena((s) => s.target.code);
+  const language = useCyberArena((s) => s.target.language);
+  const editTargetCode = useCyberArena((s) => s.editTargetCode);
+  const isReadOnly = useCyberArena((s) => isActivePhase(s.phase));
 
   return (
     <div className="flex-1 w-full h-full relative overflow-hidden bg-[#1e1e1e]">
       <Editor
         height="100%"
-        defaultLanguage="typescript"
-        value={targetCode}
+        language={language}
+        value={code}
         theme="vs-dark"
-        onChange={(val) => setTargetCode(val || "")}
+        onChange={(val) => editTargetCode(val ?? "")}
         options={{
           fontSize: 13,
           minimap: { enabled: false },
@@ -29,8 +32,8 @@ export function TargetCodeEditor() {
         }}
         loading={
           <div className="flex items-center justify-center h-full gap-2 text-slate-500 font-mono text-xs">
-            <Loader2 className="w-4 h-4 animate-spin text-cyber-blue" />
-            INITIALIZING CODE ENVIRONMENT...
+            <Loader2 className="w-4 h-4 animate-spin text-cyber-blue" aria-hidden />
+            LOADING EDITOR...
           </div>
         }
       />

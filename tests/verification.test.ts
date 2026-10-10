@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createUnavailableRunner } from "@/backend/verification/isolatedRunner";
+import { createUnavailableRunner, type IsolatedRunner } from "@/backend/verification/isolatedRunner";
 import { verifyPatch } from "@/backend/verification/verifyPatch";
 import { getPresetSnippet } from "@/shared/presets/snippets";
 import { createTrustedLocalRunner } from "./support/trustedLocalRunner";
@@ -13,7 +13,7 @@ import {
 } from "./support/fixtures";
 
 const signal = new AbortController().signal;
-const verify = (patched: string | null, runner = createTrustedLocalRunner()) =>
+const verify = (patched: string | null, runner: IsolatedRunner = createTrustedLocalRunner()) =>
   verifyPatch({ original: SQLI_ORIGINAL, patched, language: "typescript", red: SQLI_RED, runner, signal });
 
 const fixtureCheck = (r: Awaited<ReturnType<typeof verify>>) => r.checks.find((c) => c.kind === "FIXTURE");

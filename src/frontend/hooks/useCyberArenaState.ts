@@ -1,102 +1,99 @@
 import { create } from "zustand";
-import {
-  ArenaPhase,
-  VulnerabilityProfile,
-  SecurityScorecard,
-  AIMode,
-  EditorViewMode,
-} from "@/shared/types";
-import {
-  getPresetById,
-  DEFAULT_PRESET_ID,
-} from "@/backend/agents/scenarios/vulnerabilityDatabase";
+import { DEFAULT_PRESET_ID, getPresetSnippet, type PresetId } from "@/shared/presets/snippets";
+import type { ArenaData, ArenaState, TargetState } from "@/frontend/state/arenaTypes";
+import { applyStreamEvent, emptyResults, makeLog } from "@/frontend/state/applyStreamEvent";
+import { isActivePhase } from "@/frontend/state/phaseMachine";
 
-export interface ArenaState {
-  phase: ArenaPhase;
-  targetCode: string;
-  patchedCode: string | null;
-  redBotStream: string[];
-  blueBotStream: string[];
-  activeVulnerability: VulnerabilityProfile | null;
-  scorecard: SecurityScorecard | null;
-  activePresetId: string;
-  editorView: EditorViewMode;
-  aiMode: AIMode;
-  isRepoModalOpen: boolean;
-  soundEnabled: boolean;
-  setPhase: (phase: ArenaPhase) => void;
-  setTargetCode: (code: string) => void;
-  setPatchedCode: (code: string | null) => void;
-  appendRedStream: (chunk: string) => void;
-  appendBlueStream: (chunk: string) => void;
-  setActiveVulnerability: (vuln: VulnerabilityProfile | null) => void;
-  setScorecard: (scorecard: SecurityScorecard | null) => void;
-  loadPreset: (presetId: string) => void;
-  setEditorView: (view: EditorViewMode) => void;
-  setAiMode: (mode: AIMode) => void;
-  setRepoModalOpen: (open: boolean) => void;
-  toggleSound: () => void;
-  resetArena: () => void;
+export type { ArenaState, RunSnapshot, TargetState } from "@/frontend/state/arenaTypes";
+
+function presetTarget(id: PresetId): TargetState {
+  const preset = getPresetSnippet(id);
+  return { code: preset.code, presetId: id, fileName: `${id}.ts`, language: preset.language };
 }
 
-const defaultPreset = getPresetById(DEFAULT_PRESET_ID);
-
-export const useCyberArena = create<ArenaState>((set) => ({
+/** Clears everything derived from a previous run. */
+const freshTargetState = (target: TargetState): Partial<ArenaData> => ({
+  ...emptyResults(),
+  target,
   phase: "IDLE",
-  targetCode: defaultPreset.snippet.code,
-  patchedCode: null,
-  redBotStream: [],
-  blueBotStream: [],
-  activeVulnerability: null,
-  scorecard: null,
-  activePresetId: DEFAULT_PRESET_ID,
+  run: null,
   editorView: "CODE",
-  aiMode: "HUGGING_FACE",
-  isRepoModalOpen: false,
-  soundEnabled: true,
+});
 
-  setPhase: (phase) => set({ phase }),
-  setTargetCode: (code) => set({ targetCode: code }),
-  setPatchedCode: (patchedCode) => set({ patchedCode }),
-  appendRedStream: (chunk) =>
-    set((state) => ({ redBotStream: [...state.redBotStream, chunk] })),
-  appendBlueStream: (chunk) =>
-    set((state) => ({ blueBotStream: [...state.blueBotStream, chunk] })),
-  setActiveVulnerability: (activeVulnerability) =>
-    set({ activeVulnerability }),
-  setScorecard: (scorecard) => set({ scorecard }),
+export function initialArenaData(): ArenaData {
+  return {
+    ...emptyResults(),
+    mode: "DEMO",
+    target: presetTarget(DEFAULT_PRESET_ID),
+    phase: "IDLE",
+    run: null,
+    editorView: "CODE",
+    isRepoModalOpen: false,
+    soundEnabled: true,
+  };
+}
 
-  loadPreset: (presetId) => {
-    const preset = getPresetById(presetId);
-    set({
-      activePresetId: presetId,
-      targetCode: preset.snippet.code,
-      patchedCode: null,
-      redBotStream: [],
-      blueBotStream: [],
-      activeVulnerability: null,
-      scorecard: null,
-      phase: "TARGET_ACQUIRED",
-      editorView: "CODE",
-    });
-  },
+export const useCyberArena = create<ArenaState>((set, get) => {
+  /** Target-changing actions are refused while a run is active. */
+  const whenIdle = (fn: () => void) => {
+    if (!isActivePhase(get().phase)) fn();
+  };
 
-  setEditorView: (editorView) => set({ editorView }),
-  setAiMode: (aiMode) => set({ aiMode }),
-  setRepoModalOpen: (isRepoModalOpen) => set({ isRepoModalOpen }),
-  toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
+  return {
+    ...initialArenaData(),
 
-  resetArena: () => {
-    const preset = getPresetById(DEFAULT_PRESET_ID);
-    set({
-      phase: "IDLE",
-      targetCode: preset.snippet.code,
-      patchedCode: null,
-      redBotStream: [],
-      blueBotStream: [],
-      activeVulnerability: null,
-      scorecard: null,
-      editorView: "CODE",
-    });
-  },
-}));
+    setMode: (mode) =>
+      whenIdle(() => {
+        if (mode === "DEMO" && get().target.presetId === null) return;
+        set({ ...freshTargetState(get().target), mode });
+      }),
+
+    editTargetCode: (code) =>
+      whenIdle(() => {
+        const { target, mode } = get();
+        if (code === target.code) return;
+        // Edited code is detached from preset playback; demo results no longer apply.
+        set({ ...freshTargetState({ ...target, code, presetId: null }), mode: mode === "DEMO" ? "LIVE" : mode });
+      }),
+
+    loadExternalTarget: (target) =>
+      whenIdle(() => set({ ...freshTargetState({ ...target, presetId: null }), mode: "LIVE" })),
+
+    loadPreset: (presetId) => whenIdle(() => set(freshTargetState(presetTarget(presetId)))),
+
+    resetArena: () => whenIdle(() => set(freshTargetState(presetTarget(DEFAULT_PRESET_ID)))),
+
+    beginRun: (snapshot) => {
+      if (isActivePhase(get().phase)) return false;
+      set({ ...emptyResults(), run: snapshot, phase: "RED_ANALYSIS", editorView: "CODE", illustrative: snapshot.mode === "DEMO" });
+      return true;
+    },
+
+    applyEvent: (event) => {
+      const patch = applyStreamEvent(get(), event);
+      if (patch) set(patch);
+    },
+
+    failRun: (runId, error) => {
+      const { run, phase } = get();
+      if (run?.runId !== runId || !isActivePhase(phase)) return;
+      set({ phase: "FAILED", error });
+    },
+
+    cancelRun: (runId) => {
+      const { run, phase, blueLogs } = get();
+      if (run?.runId !== runId || !isActivePhase(phase)) return;
+      set({ phase: "CANCELLED", blueLogs: [...blueLogs, makeLog("Run cancelled by user.", "CLIENT", false)] });
+    },
+
+    setEditorView: (editorView) => {
+      if (editorView === "DIFF" && !get().blue?.patchedCode) return;
+      set({ editorView });
+    },
+    setRepoModalOpen: (isRepoModalOpen) => {
+      if (isRepoModalOpen && isActivePhase(get().phase)) return;
+      set({ isRepoModalOpen });
+    },
+    toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
+  };
+});

@@ -15,7 +15,7 @@ const EnvSchema = z.object({
 export type ServerEnv = z.infer<typeof EnvSchema>;
 
 /** Reads server-only configuration. Empty strings are treated as unset. */
-export function readServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
+export function readServerEnv(source: Record<string, string | undefined> = process.env): ServerEnv {
   const cleaned = Object.fromEntries(
     Object.entries(source).filter(([, value]) => value !== undefined && value.trim() !== "")
   );

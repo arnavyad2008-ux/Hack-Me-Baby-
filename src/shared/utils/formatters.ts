@@ -1,6 +1,6 @@
-import { VulnerabilitySeverity } from "@/shared/types";
+import type { Severity } from "@/shared/types";
 
-export function getSeverityColor(severity: VulnerabilitySeverity): string {
+export function getSeverityColor(severity: Severity): string {
   switch (severity) {
     case "CRITICAL":
       return "text-cyber-red border-cyber-red bg-cyber-red/10";
@@ -13,18 +13,4 @@ export function getSeverityColor(severity: VulnerabilitySeverity): string {
     default:
       return "text-slate-400 border-slate-600 bg-slate-800/10";
   }
-}
-
-export function formatTimestamp(): string {
-  const now = new Date();
-  return (
-    now.toTimeString().split(" ")[0] +
-    "." +
-    String(now.getMilliseconds()).padStart(3, "0")
-  );
-}
-
-export function truncateString(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen) + "...";
 }

@@ -26,16 +26,25 @@ export function isPublicAddress(address: string): boolean {
  * this check and the actual connection.
  */
 export async function assertPublicHttpUrl(raw: string): Promise<URL> {
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(raw)?.[1]?.toLowerCase();
+  if (scheme && /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) && scheme !== "http" && scheme !== "https") {
+    throw new Error("Only http(s) URLs are allowed.");
+  }
   let url: URL;
   try {
-    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    url = new URL(scheme === "http" || scheme === "https" ? raw : `https://${raw}`);
   } catch {
     throw new Error("Invalid URL.");
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only http(s) URLs are allowed.");
   if (url.username || url.password) throw new Error("URLs with credentials are not allowed.");
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true });
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error(`Could not resolve ${host}.`);
+  }
   if (addresses.length === 0 || !addresses.every((a) => isPublicAddress(a.address))) {
     throw new Error("Target resolves to a private or reserved address and was not contacted.");
   }

@@ -1,73 +1,35 @@
-export type ArenaPhase =
-  | "IDLE"
-  | "TARGET_ACQUIRED"
-  | "RED_RECON"
-  | "RED_EXPLOIT"
-  | "BLUE_INTERCEPT"
-  | "BLUE_PATCH"
-  | "RESOLVED";
+import type { PipelinePhase } from "@/shared/contracts/events";
 
-export type VulnerabilitySeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type { AuditMode, StreamEvent, RunError } from "@/shared/contracts/events";
+export type { Finding, RedResult, BlueResult, Severity } from "@/shared/contracts/findings";
+export type { VerificationResult, Outcome } from "@/shared/contracts/verification";
 
-export type AIMode = "HUGGING_FACE" | "SIMMY_LOCAL" | "STATIC_AST";
+/** UI lifecycle. Pipeline phases come from the server; the rest are client-side states. */
+export type ArenaPhase = "IDLE" | PipelinePhase | "COMPLETED" | "FAILED" | "CANCELLED";
 
-export type EditorViewMode = "CODE" | "DIFF" | "SANDBOX";
+export type EditorViewMode = "CODE" | "DIFF" | "VERIFICATION";
 
-export interface VulnerabilityProfile {
-  id: string;
-  title: string;
-  cve: string;
-  cwe: string;
-  severity: VulnerabilitySeverity;
-  description: string;
-  vulnerableLineNumbers: number[];
-  vector: string;
-  sampleExploitPayload: string;
-  remediationSummary: string;
-}
-
-export interface SecurityScorecard {
-  initialRiskScore: number;
-  postPatchRiskScore: number;
-  cvssReduction: number;
-  defenseGrade: "A+" | "A" | "B" | "C" | "F";
-  owaspCategory: string;
-  mitigationStatus: "VERIFIED_SECURE" | "PARTIAL_REMEDIATION" | "FAILED";
-  keyRemediations: string[];
-}
-
-export interface StreamEventPayload {
-  phase: ArenaPhase;
-  type: "log" | "recon" | "exploit" | "intercept" | "patch" | "scorecard" | "error";
+export interface LogLine {
+  id: number;
   text: string;
-  data?: {
-    vulnerability?: VulnerabilityProfile;
-    patchedCode?: string;
-    scorecard?: SecurityScorecard;
-  };
+  agent: "RED" | "BLUE" | "VERIFIER" | "CLIENT";
+  illustrative: boolean;
+  at: number;
 }
 
-export interface PresetSnippet {
-  id: string;
-  name: string;
-  language: string;
-  code: string;
-  description: string;
-  vulnerabilityType: string;
-}
-
+/** A heuristic lead from repo/URL ingestion — not a confirmed finding. */
 export interface ScannedFileReport {
   path: string;
-  severity: VulnerabilitySeverity;
-  cwe: string;
+  label: string;
   snippet: string;
   explanation: string;
+  /** Present when the snippet is real source that can be loaded into the editor. */
+  loadable: boolean;
 }
 
-export interface DuelResponse {
-  bypassed: boolean;
-  statusCode: number;
-  statusText: string;
-  feedback: string;
-  responsePayload: string;
+export interface DuelProbeResult {
+  available: boolean;
+  message: string;
+  original?: string;
+  candidate?: string;
 }

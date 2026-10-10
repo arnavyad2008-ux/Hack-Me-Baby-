@@ -1,3 +1,4 @@
+import "server-only";
 import type { BlueResult, ModelRedOutput } from "@/shared/contracts/findings";
 import type { PresetId } from "@/shared/presets/snippets";
 

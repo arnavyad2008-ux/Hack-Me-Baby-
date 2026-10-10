@@ -15,7 +15,7 @@ export function createTrustedLocalRunner(): IsolatedRunner & { calls: number } {
     runHarness: (stdin: string) =>
       new Promise<{ stdout: string; timedOut: boolean; exitCode: number | null }>((resolve) => {
         runner.calls++;
-        const child = spawn(process.execPath, ["--no-warnings", harness], { env: {} });
+        const child = spawn(process.execPath, ["--no-warnings", harness], { env: { NODE_ENV: "test" } });
         let stdout = "";
         child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
         const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
