@@ -1,12 +1,46 @@
 "use client";
 
-import React from "react";
-import { CheckCircle2, Award, ArrowDownRight } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle2, Award, ArrowDownRight, Copy, Check, Download } from "lucide-react";
 import { useCyberArena } from "@/frontend/hooks/useCyberArenaState";
 
 export function ScorecardView() {
-  const { scorecard } = useCyberArena();
+  const { scorecard, patchedCode, activeVulnerability } = useCyberArena();
+  const [copied, setCopied] = useState(false);
+
   if (!scorecard) return null;
+
+  const handleCopyPatch = () => {
+    if (patchedCode) {
+      navigator.clipboard.writeText(patchedCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleDownloadReport = () => {
+    const reportText = `# HACK ME BABY // SECURITY AUDIT REPORT
+Target: ${activeVulnerability?.title || "Custom Source"}
+CWE: ${activeVulnerability?.cwe || "N/A"}
+CVSS Reduction: -${scorecard.cvssReduction}
+Defense Grade: ${scorecard.defenseGrade}
+Mitigation Status: ${scorecard.mitigationStatus}
+
+## Key Actions Taken:
+${scorecard.keyRemediations.map((r) => `- ${r}`).join("\n")}
+
+## Verified Defensive Patch:
+\`\`\`typescript
+${patchedCode || "// No patch generated"}
+\`\`\`
+`;
+    const blob = new Blob([reportText], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-report-${Date.now()}.md`;
+    a.click();
+  };
 
   return (
     <div className="p-4 bg-slate-900/95 border-t border-cyber-border font-mono text-xs text-slate-200">
@@ -15,13 +49,21 @@ export function ScorecardView() {
           <Award className="w-5 h-5 text-cyber-neon" />
           <span className="font-bold text-sm text-slate-100">DEFENSE VERIFICATION SCORECARD</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500 text-emerald-400 font-bold">
-            GRADE: {scorecard.defenseGrade}
-          </span>
-          <span className="text-slate-400">
-            OWASP: <span className="text-slate-200">{scorecard.owaspCategory}</span>
-          </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopyPatch}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px]"
+          >
+            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-cyber-blue" />}
+            <span>{copied ? "Copied" : "Copy Patch"}</span>
+          </button>
+          <button
+            onClick={handleDownloadReport}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyber-blue/10 border border-cyber-blue text-cyber-blue hover:bg-cyber-blue hover:text-black transition-all text-[11px]"
+          >
+            <Download className="w-3 h-3" />
+            <span>Export Report</span>
+          </button>
         </div>
       </div>
 
