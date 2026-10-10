@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.32",
     "@monaco-editor/react": "^4.6.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.11.17",

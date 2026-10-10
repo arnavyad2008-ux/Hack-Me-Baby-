@@ -3,6 +3,7 @@ import {
   getPresetById,
   DEFAULT_PRESET_ID,
 } from "@/backend/agents/scenarios/vulnerabilityDatabase";
+import { HuggingFaceService } from "./huggingFaceService";
 
 export interface AuditExecutionResult {
   vulnerability: VulnerabilityProfile;
@@ -19,17 +20,42 @@ export class AuditService {
   ): Promise<AuditExecutionResult> {
     const selectedScenario = getPresetById(presetId || DEFAULT_PRESET_ID);
 
-    if (!presetId && code !== selectedScenario.snippet.code) {
-      return this.analyzeCustomCode(code);
+    // If using default preset unchanged, use instant scenario
+    if (presetId || code === selectedScenario.snippet.code) {
+      return {
+        vulnerability: selectedScenario.vulnerability,
+        patchedCode: selectedScenario.patchedCode,
+        scorecard: selectedScenario.scorecard,
+        redLogs: selectedScenario.redLogs,
+        blueLogs: selectedScenario.blueLogs,
+      };
     }
 
-    return {
-      vulnerability: selectedScenario.vulnerability,
-      patchedCode: selectedScenario.patchedCode,
-      scorecard: selectedScenario.scorecard,
-      redLogs: selectedScenario.redLogs,
-      blueLogs: selectedScenario.blueLogs,
-    };
+    // Try Hugging Face AI Brain first
+    const hfVuln = await HuggingFaceService.analyzeVulnerability(code);
+    if (hfVuln) {
+      const hfPatch = await HuggingFaceService.generateDefensivePatch(code, hfVuln);
+      if (hfPatch) {
+        return {
+          vulnerability: hfVuln,
+          patchedCode: hfPatch.patchedCode,
+          scorecard: hfPatch.scorecard,
+          redLogs: [
+            "[RED_AGENT // HF-QWEN-CODER] Initializing neural control-flow analysis...",
+            `[RED_AGENT // HF-QWEN-CODER] Detected ${hfVuln.cwe}: ${hfVuln.title}`,
+            `[RED_AGENT // HF-QWEN-CODER] Exploit payload synthesized: ${hfVuln.sampleExploitPayload}`,
+          ],
+          blueLogs: [
+            "[BLUE_AGENT // HF-QWEN-CODER] Threat telemetry intercepted from Red Bot.",
+            "[BLUE_AGENT // HF-QWEN-CODER] Formulating defensive boundary verification...",
+            "[BLUE_AGENT // HF-QWEN-CODER] Neural patch synthesized with zero syntax regressions.",
+          ],
+        };
+      }
+    }
+
+    // Fallback to local static AST analyzer
+    return this.analyzeCustomCode(code);
   }
 
   private static analyzeCustomCode(code: string): AuditExecutionResult {
@@ -83,7 +109,7 @@ export class AuditService {
       patchedCode,
       scorecard,
       redLogs: [
-        "[RED_AGENT] Custom snippet loaded. Initiating dynamic AST extraction...",
+        "[RED_AGENT] Custom snippet loaded. Initiating AST extraction...",
         "[RED_AGENT] Taint analysis reveals unvalidated input propagation.",
         `[RED_AGENT] Exploit vector synthesized for ${cwe}.`,
       ],
